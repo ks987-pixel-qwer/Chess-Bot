@@ -3,9 +3,11 @@ import math
 
 import chess
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from chessbot.evaluation import evaluate
+from chessbot.alpha_beta import alpha_beta_search
 
 
 # --------------------------------------------------
@@ -30,6 +32,13 @@ app = FastAPI(
     version="0.3.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5174"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --------------------------------------------------
 # Request Models
@@ -46,6 +55,11 @@ class PositionRequest(BaseModel):
         description="Chess position in FEN notation.",
     )
 
+class BestMoveRequest(BaseModel):
+    fen: str = Field(
+        default="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    )
+    depth: int = Field(default=3, ge=1, le=5)
 
 # --------------------------------------------------
 # Helper Functions
@@ -64,7 +78,7 @@ def load_board(fen: str) -> chess.Board:
     except (ValueError, TypeError):
         raise HTTPException(
             status_code=400,
-            detail="Invalid FEN notation.",
+            detail="Invalid FEN position."
         )
 
     if not board.is_valid():
@@ -225,4 +239,30 @@ def game_status(request: PositionRequest):
         "fen": board.fen(),
         "turn": "white" if board.turn else "black",
         **get_game_status(board),
+    }
+
+#--------------------------------------------------
+#Best Move Endpoint
+#--------------------------------------------------
+
+@app.post("/best-move")
+def get_best_move(request: BestMoveRequest):
+
+    board = load_board(request.fen)
+
+    if board.is_game_over(claim_draw=True):
+        raise HTTPException(
+            status_code=400,
+            detail="Game is already over."
+        )
+
+    result = alpha_beta_search(board, depth=request.depth)
+
+    return {
+        "best_move": result.best_move.uci(),
+        "score": result.score,
+        "depth": request.depth,
+        "nodes_searched": result.nodes_searched,
+        "leaves_evaluated": result.leaves_evaluated,
+        "cutoffs": result.cutoffs
     }
