@@ -1,4 +1,4 @@
-
+#Uses both alpha beta and minimax search to find the best move for a given position.
 from dataclasses import dataclass
 import chess
 
